@@ -21,7 +21,7 @@ async def main():
     
     try:
         # Setup paths
-        workflow_file = Path(__file__).parent / "variant_calling.yaml"
+        workflow_file = Path(__file__).parent / "example_workflow.yaml"
         work_dir = Path("work")
         temp_dir = Path("temp")
         
