@@ -16,12 +16,12 @@ from .executors.command import CommandExecutor
 from .executors.container import ContainerExecutor
 
 
-class WorkflowExecutor:
+class WorkflowEngine:
     """Executor for workflows."""
     
     def __init__(self, workflow: Workflow, working_dir: Path, temp_dir: Optional[Path] = None):
         """
-        Initialize the workflow executor.
+        Initialize the workflow engine.
         
         Args:
             workflow: Workflow to execute

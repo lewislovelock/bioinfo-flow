@@ -14,7 +14,7 @@ from src.bioflow.parser.models import (
     Workflow
 )
 from src.bioflow.engine.models import ExecutionStatus
-from src.bioflow.engine.workflow import WorkflowExecutor
+from src.bioflow.engine.workflow import WorkflowEngine
 from src.bioflow.engine.exceptions import ExecutionError
 
 
@@ -31,7 +31,7 @@ def workflow():
 @pytest.fixture
 def executor(workflow, tmp_path):
     """Create test executor."""
-    return WorkflowExecutor(
+    return WorkflowEngine(
         workflow=workflow,
         working_dir=tmp_path / "work",
         temp_dir=tmp_path / "temp"

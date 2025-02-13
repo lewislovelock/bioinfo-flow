@@ -7,7 +7,7 @@ import logging
 from pathlib import Path
 
 from bioflow.parser import WorkflowParser
-from bioflow.engine import WorkflowExecutor, ExecutionStatus
+from bioflow.engine import WorkflowEngine, ExecutionStatus
 
 
 async def main():
@@ -35,8 +35,8 @@ async def main():
         workflow = parser.parse(workflow_file)
         
         # Create executor
-        logger.info("Creating workflow executor")
-        executor = WorkflowExecutor(
+        logger.info("Creating workflow engine")
+        engine = WorkflowEngine(
             workflow=workflow,
             working_dir=work_dir,
             temp_dir=temp_dir
@@ -44,17 +44,11 @@ async def main():
         
         # Execute workflow
         logger.info("Starting workflow execution")
-        result = await executor.execute()
+        result = await engine.execute()
         
         # Check result
         if result.status == ExecutionStatus.COMPLETED:
             logger.info("Workflow completed successfully")
-            for step_name, state in result.step_states.items():
-                logger.info(
-                    "Step '%s' completed with status %s",
-                    step_name,
-                    state.status.name
-                )
         else:
             logger.error(
                 "Workflow failed: %s",

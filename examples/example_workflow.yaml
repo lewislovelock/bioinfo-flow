@@ -7,8 +7,6 @@ global:
   temp_dir: "./temp"
   
 env:
-  THREADS: "4"
-  MEMORY: "8G"
   INPUT_DIR: "./input"
   OUTPUT_DIR: "./output"
   REF_DIR: "./reference"

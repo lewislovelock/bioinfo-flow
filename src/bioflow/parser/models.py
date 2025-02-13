@@ -9,9 +9,6 @@ from pathlib import Path
 
 class StepType(Enum):
     """Step types."""
-    # COMMAND = auto()
-    # CONTAINER = auto()
-    # GROUP = auto()
     SINGLE = "single"
     PARALLEL_GROUP = "parallel_group"
     SEQUENTIAL_GROUP = "sequential_group"
