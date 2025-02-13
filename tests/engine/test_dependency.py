@@ -3,8 +3,8 @@ Tests for execution dependency resolver.
 """
 import pytest
 
-from src.bioflow.parser.models import Step, StepType
-from src.bioflow.engine.dependency import ExecutionDependencyResolver
+from bioflow.parser.models import Step, StepType
+from bioflow.engine.dependency import ExecutionDependencyResolver
 
 
 @pytest.fixture

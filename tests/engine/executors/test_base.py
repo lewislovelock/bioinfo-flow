@@ -5,9 +5,9 @@ import pytest
 from pathlib import Path
 from datetime import datetime
 
-from src.bioflow.parser.models import Step, StepType, Container, Input, InputType
-from src.bioflow.engine.models import ExecutionContext, StepExecutionState, ExecutionStatus, Workflow
-from src.bioflow.engine.executors.base import BaseExecutor
+from bioflow.parser.models import Step, StepType, Container, Input, InputType
+from bioflow.engine.models import ExecutionContext, StepExecutionState, ExecutionStatus, Workflow
+from bioflow.engine.executors.base import BaseExecutor
 
 
 class TestExecutor(BaseExecutor):

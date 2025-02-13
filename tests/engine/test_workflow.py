@@ -6,16 +6,16 @@ import pytest
 from pathlib import Path
 from datetime import datetime
 
-from src.bioflow.parser.models import (
+from bioflow.parser.models import (
     Step,
     StepType,
     Container,
     Mount,
     Workflow
 )
-from src.bioflow.engine.models import ExecutionStatus
-from src.bioflow.engine.workflow import WorkflowEngine
-from src.bioflow.engine.exceptions import ExecutionError
+from bioflow.engine.models import ExecutionStatus
+from bioflow.engine.workflow import WorkflowEngine
+from bioflow.engine.exceptions import ExecutionError
 
 
 @pytest.fixture

@@ -3,7 +3,7 @@ Tests for workflow configuration models.
 """
 from pathlib import Path
 import pytest
-from src.bioflow.parser.models import (
+from bioflow.parser.models import (
     StepType,
     InputType,
     Notification,

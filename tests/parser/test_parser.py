@@ -3,8 +3,8 @@ Tests for workflow parser.
 """
 import pytest
 from pathlib import Path
-from src.bioflow.parser import WorkflowParser
-from src.bioflow.parser.models import Workflow
+from bioflow.parser import WorkflowParser
+from bioflow.parser.models import Workflow
 
 
 @pytest.fixture

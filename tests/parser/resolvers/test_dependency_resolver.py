@@ -2,8 +2,8 @@
 Tests for dependency resolution.
 """
 import pytest
-from src.bioflow.parser.models import Step, StepType
-from src.bioflow.parser.resolvers.dependency import DependencyResolver
+from bioflow.parser.models import Step, StepType
+from bioflow.parser.resolvers.dependency import DependencyResolver
 
 
 @pytest.fixture
@@ -48,7 +48,7 @@ def test_implicit_dependency_from_command(resolver):
 
 def test_implicit_dependency_from_input(resolver):
     """Test implicit dependency from input."""
-    from src.bioflow.parser.models import Input, InputType
+    from bioflow.parser.models import Input, InputType
     
     step1 = Step(name="step1", type=StepType.SINGLE)
     step2 = Step(

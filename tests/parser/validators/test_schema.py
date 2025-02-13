@@ -5,7 +5,7 @@ import pytest
 from pathlib import Path
 import yaml
 import jsonschema
-from src.bioflow.parser.validators.schema import SchemaValidator
+from bioflow.parser.validators.schema import SchemaValidator
 
 
 @pytest.fixture

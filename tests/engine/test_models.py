@@ -5,8 +5,8 @@ import pytest
 from datetime import datetime
 from pathlib import Path
 
-from src.bioflow.parser.models import Step, Workflow, StepType
-from src.bioflow.engine.models import (
+from bioflow.parser.models import Step, Workflow, StepType
+from bioflow.engine.models import (
     ExecutionStatus,
     StepExecutionState,
     ExecutionContext,

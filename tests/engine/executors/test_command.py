@@ -6,9 +6,9 @@ import pytest
 from pathlib import Path
 from datetime import datetime
 
-from src.bioflow.parser.models import Step, StepType, Container
-from src.bioflow.engine.models import ExecutionContext, ExecutionStatus, Workflow
-from src.bioflow.engine.executors.command import CommandExecutor
+from bioflow.parser.models import Step, StepType, Container
+from bioflow.engine.models import ExecutionContext, ExecutionStatus, Workflow
+from bioflow.engine.executors.command import CommandExecutor
 
 
 @pytest.fixture

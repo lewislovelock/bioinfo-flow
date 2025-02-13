@@ -3,7 +3,7 @@ Tests for execution exceptions.
 """
 import pytest
 
-from src.bioflow.engine.exceptions import (
+from bioflow.engine.exceptions import (
     ExecutionError,
     StepExecutionError,
     DependencyError,

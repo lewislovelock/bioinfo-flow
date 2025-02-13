@@ -2,7 +2,7 @@
 Tests for variable resolution.
 """
 import pytest
-from src.bioflow.parser.resolvers.variable import VariableResolver
+from bioflow.parser.resolvers.variable import VariableResolver
 
 
 @pytest.fixture
