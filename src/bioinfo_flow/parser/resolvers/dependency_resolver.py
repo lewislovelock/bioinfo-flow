@@ -5,17 +5,21 @@ Handles step dependencies and generates execution order.
 
 from typing import Dict, List, Set
 from collections import defaultdict
+from loguru import logger
 from rich.console import Console
 from rich.tree import Tree
 from rich.panel import Panel
 from rich import box
 
-from bioinfo_flow.parser.model import BioinfoFlow, Step, Workflow
+from bioinfo_flow.parser.model import BioinfoFlow, Step
+from bioinfo_flow.parser.errors import (
+    DependencyResolutionError,
+    CircularDependencyError,
+    setup_logger
+)
 
-
-class DependencyError(Exception):
-    """Error raised for dependency resolution issues."""
-    pass
+# Initialize logger
+logger = setup_logger()
 
 
 class DependencyResolver:
@@ -25,6 +29,7 @@ class DependencyResolver:
         """Initialize resolver with workflow definition."""
         self.workflow = workflow
         self.graph: Dict[str, Set[str]] = defaultdict(set)
+        logger.debug(f"Initializing dependency resolver for '{workflow.name}'")
         self._build_dependency_graph()
 
     def _build_dependency_graph(self) -> None:
@@ -33,6 +38,7 @@ class DependencyResolver:
         for step in self.workflow.workflow.steps:
             for dep in step.depends_on:
                 self.graph[step.name].add(dep)
+                logger.debug(f"Added explicit dependency: {step.name} → {dep}")
 
         # Add implicit dependencies from step references
         for step in self.workflow.workflow.steps:
@@ -64,28 +70,37 @@ class DependencyResolver:
         step_refs = re.findall(r'\${steps\.([^.]+)\.outputs\.[^}]+}', value)
         for ref in step_refs:
             self.graph[step_name].add(ref)
+            logger.debug(f"Added implicit dependency: {step_name} → {ref}")
 
     def validate_dependencies(self) -> None:
         """
         Validate workflow dependencies.
 
         Raises:
-            DependencyError: If circular dependencies or missing steps are found
+            DependencyResolutionError: If missing steps are found
+            CircularDependencyError: If circular dependencies are found
         """
+        logger.debug("Validating workflow dependencies")
+        
         # Check for missing steps
         all_steps = {step.name for step in self.workflow.workflow.steps}
         for step, deps in self.graph.items():
             missing = deps - all_steps
             if missing:
-                raise DependencyError(
-                    f"Step '{step}' depends on non-existent steps: {missing}"
+                logger.error(f"Missing dependencies for step '{step}': {missing}")
+                raise DependencyResolutionError(
+                    f"Step '{step}' depends on non-existent steps: {missing}",
+                    step,
+                    {"missing_steps": list(missing)}
                 )
 
         # Check for cycles
         try:
             self.get_execution_order()
-        except DependencyError as e:
-            raise DependencyError(f"Circular dependency detected: {e}")
+            logger.debug("Dependency validation successful")
+        except CircularDependencyError as e:
+            logger.error(f"Circular dependency detected: {e}")
+            raise
 
     def get_execution_order(self) -> List[Step]:
         """
@@ -111,8 +126,10 @@ class DependencyResolver:
             List of steps in execution order (dependencies first)
 
         Raises:
-            DependencyError: If circular dependencies are found
+            CircularDependencyError: If circular dependencies are found
         """
+        logger.debug("Calculating execution order")
+        
         # Kahn's algorithm for topological sort
         in_degree = defaultdict(int)
         for deps in self.graph.values():
@@ -131,6 +148,7 @@ class DependencyResolver:
         while queue:
             current = queue.pop(0)
             execution_order.append(step_map[current])
+            logger.debug(f"Added to execution order: {current}")
 
             # Remove edges from the graph
             for dependent in self.graph[current]:
@@ -142,10 +160,93 @@ class DependencyResolver:
             # Find the cycle
             remaining = set(step_map.keys()) - {step.name for step in execution_order}
             cycle = self._find_cycle(remaining)
-            raise DependencyError(f"Circular dependency found: {' -> '.join(cycle)}")
+            logger.error(f"Circular dependency detected: {' → '.join(cycle)}")
+            raise CircularDependencyError(cycle)
 
-        # Reverse the order to get dependencies first
-        return list(reversed(execution_order))
+        ordered_steps = list(reversed(execution_order))
+        # logger.info(f"Execution order: {' → '.join(s.name for s in ordered_steps)}")
+        return ordered_steps
+
+    def get_parallel_groups(self) -> List[List[Step]]:
+        """
+        Get groups of steps that can be executed in parallel.
+        
+        Each group contains steps that:
+        1. Have all their dependencies satisfied by previous groups
+        2. Can be executed in parallel with other steps in the same group
+        
+        For example, given the following dependency graph:
+        ```
+        step1 <-- step2 <-- step4
+          ^
+          |
+        step3 <-- step5
+        ```
+        
+        The parallel groups would be:
+        [
+            [step1],           # Group 1 (no dependencies)
+            [step2, step3],    # Group 2 (depend on step1)
+            [step4, step5]     # Group 3 (depend on step2/step3)
+        ]
+        
+        Returns:
+            List of step groups, where each group is a list of steps
+            that can be executed in parallel
+        """
+        try:
+            # Get execution order first to validate no cycles
+            ordered_steps = self.get_execution_order()
+        except CircularDependencyError as e:
+            logger.error(f"Cannot get parallel groups: {e}")
+            raise
+
+        # Create a map of steps to their dependencies
+        step_map = {step.name: step for step in ordered_steps}
+        
+        # Group steps by their maximum dependency depth
+        groups: Dict[int, List[Step]] = {}
+        
+        for step in ordered_steps:
+            # Calculate the longest path to this step (its depth)
+            depth = self._get_max_dependency_depth(step.name, step_map)
+            if depth not in groups:
+                groups[depth] = []
+            groups[depth].append(step)
+            logger.debug(f"Step '{step.name}' assigned to depth {depth}")
+        
+        # Convert to list of groups, sorted by depth
+        parallel_groups = [groups[depth] for depth in sorted(groups.keys())]
+        
+        # Log the groups
+        for i, group in enumerate(parallel_groups, 1):
+            step_names = [step.name for step in group]
+            # logger.info(f"Parallel group {i}: {', '.join(step_names)}")
+        
+        return parallel_groups
+
+    def _get_max_dependency_depth(self, step_name: str, step_map: Dict[str, Step]) -> int:
+        """
+        Calculate the maximum dependency depth for a step.
+        
+        Args:
+            step_name: Name of the step to check
+            step_map: Map of step names to Step objects
+            
+        Returns:
+            Maximum depth of dependencies (0 for root steps)
+        """
+        if not self.graph[step_name]:
+            return 0
+            
+        # Get depths of all dependencies
+        dep_depths = [
+            self._get_max_dependency_depth(dep, step_map)
+            for dep in self.graph[step_name]
+        ]
+        
+        # Return maximum depth + 1
+        return max(dep_depths) + 1
 
     def visualize_graph(self) -> None:
         """
@@ -180,7 +281,7 @@ class DependencyResolver:
         
         try:
             ordered_steps = self.get_execution_order()
-        except DependencyError:
+        except CircularDependencyError:
             console.print("[red]Error: Cannot visualize graph with cycles[/red]")
             return
 
@@ -227,32 +328,14 @@ class DependencyResolver:
 
         console.print(main_tree)
 
-        # Print parallel execution groups (calculated by dependency chain depth)
-        levels: Dict[int, List[str]] = defaultdict(list)
-        for step in ordered_steps:
-            depth = len(self._get_dependency_chain(step.name))
-            levels[depth].append(step.name)
-
-        if len(levels) > 1:
-            console.print("\n[bold yellow]Parallel Execution Groups:[/bold yellow]")
-            for depth, steps in sorted(levels.items()):
-                if len(steps) > 1:
-                    console.print(f"[green]Level {depth}:[/green] {', '.join(sorted(steps))}")
-
-    def _get_dependency_chain(self, step_name: str) -> List[str]:
-        """Get the chain of dependencies for a step."""
-        chain = []
-        current = step_name
-        visited = set()
-        
-        while current and current not in visited:
-            visited.add(current)
-            chain.append(current)
-            # Get the first dependency of the current step
-            deps = self.graph[current]
-            current = next(iter(deps)) if deps else None
-            
-        return chain
+        # # Print parallel execution groups
+        # parallel_groups = self.get_parallel_groups()
+        # if len(parallel_groups) > 1:
+        #     console.print("\n[bold yellow]Parallel Execution Groups:[/bold yellow]")
+        #     for i, group in enumerate(parallel_groups, 1):
+        #         step_names = [step.name for step in group]
+        #         if len(step_names) > 1:
+        #             console.print(f"[green]Group {i}:[/green] {', '.join(sorted(step_names))}")
 
     def _find_cycle(self, nodes: Set[str]) -> List[str]:
         """Find a cycle in the dependency graph starting from given nodes."""
@@ -292,7 +375,7 @@ def main():
 
     example_workflow = """
     name: test-workflow
-    version: "1.0.0"
+    version: "0.1.0"
     global:
         working_dir: "/tmp/test"
         temp_dir: "/tmp/test/temp"
@@ -328,24 +411,27 @@ def main():
               execution:
                 mode: local
                 command: "echo 'parallel with step2'"
+                
+            - name: step5
+              type: single
+              depends_on: ["step2"]
+              execution:
+                mode: local
+                command: "echo 'parallel with step3'"
     """
 
     try:
         workflow = WorkflowParser.load_workflow_from_string(example_workflow)
         resolver = DependencyResolver(workflow)
         
-        print("Validating dependencies...")
         resolver.validate_dependencies()
-        
-        console.print("\n[bold blue]Dependency Graph:[/bold blue]")
         resolver.visualize_graph()
         
-        console.print("\n[bold green]Execution Order:[/bold green]")
-        for i, step in enumerate(resolver.get_execution_order(), 1):
-            deps = resolver.graph[step.name]
+        console.print("\n[bold green]Parallel Groups:[/bold green]")
+        for i, group in enumerate(resolver.get_parallel_groups(), 1):
+            step_names = [step.name for step in group]
             console.print(
-                f"{i}. [cyan]{step.name}[/cyan] (depends on: "
-                f"[yellow]{list(deps) if deps else 'none'}[/yellow])"
+                f"{i}. [cyan]{', '.join(step_names)}[/cyan]"
             )
             
     except Exception as e:
