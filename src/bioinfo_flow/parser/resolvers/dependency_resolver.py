@@ -87,8 +87,24 @@ class DependencyResolver:
         """
         Get steps in dependency-resolved order.
 
+        The method uses Kahn's algorithm for topological sort to determine
+        the execution order. For example, given the following dependency graph:
+
+        ```
+        step1 <-- step2 <-- step3
+          ^
+          |
+        step4
+        ```
+
+        The execution order would be: [step1, step4, step2, step3]
+        where:
+        - step1 and step4 can run in parallel (no dependencies)
+        - step2 must wait for step1
+        - step3 must wait for step2
+
         Returns:
-            List of steps in execution order
+            List of steps in execution order (dependencies first)
 
         Raises:
             DependencyError: If circular dependencies are found
@@ -124,7 +140,8 @@ class DependencyResolver:
             cycle = self._find_cycle(remaining)
             raise DependencyError(f"Circular dependency found: {' -> '.join(cycle)}")
 
-        return execution_order
+        # Reverse the order to get dependencies first
+        return list(reversed(execution_order))
 
     def _find_cycle(self, nodes: Set[str]) -> List[str]:
         """Find a cycle in the dependency graph starting from given nodes."""
@@ -168,9 +185,13 @@ def main():
         steps:
             - name: step1
               type: single
+              outputs:
+                - name: file
+                  type: file
+                  value: "step1.txt"
               execution:
                 mode: local
-                command: "echo 'step1'"
+                command: "echo 'step1' > ${outputs.file}"
 
             - name: step2
               type: single
@@ -194,7 +215,14 @@ def main():
         print("Validating dependencies...")
         resolver.validate_dependencies()
         
-        print("\nExecution order:")
+        print("\nDependency Graph:")
+        for step_name, deps in resolver.graph.items():
+            if deps:
+                print(f"{step_name} depends on: {list(deps)}")
+            else:
+                print(f"{step_name}: no dependencies")
+        
+        print("\nExecution Order:")
         for i, step in enumerate(resolver.get_execution_order(), 1):
             deps = resolver.graph[step.name]
             print(f"{i}. {step.name} (depends on: {list(deps) if deps else 'none'})")
