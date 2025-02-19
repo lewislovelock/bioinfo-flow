@@ -5,6 +5,10 @@ Handles step dependencies and generates execution order.
 
 from typing import Dict, List, Set
 from collections import defaultdict
+from rich.console import Console
+from rich.tree import Tree
+from rich.panel import Panel
+from rich import box
 
 from bioinfo_flow.parser.model import BioinfoFlow, Step, Workflow
 
@@ -143,6 +147,113 @@ class DependencyResolver:
         # Reverse the order to get dependencies first
         return list(reversed(execution_order))
 
+    def visualize_graph(self) -> None:
+        """
+        Create a rich visualization of the dependency graph using the rich package.
+        
+        Example output for a linear dependency chain (step1 -> step2 -> step3):
+        ```
+        Dependency Graph
+        ╭────────── Step ───────────╮
+        │ step1                     │
+        │ Type: single              │
+        │ Mode: local               │
+        ╰───────────────────────────╯
+            ├── ╭────────── Step ───────────╮
+            │   │ step2                     │
+            │   │ Type: single              │
+            │   │ Mode: local               │
+            │   ╰───────────────────────────╯
+            │       └── ╭────────── Step ───────────╮
+            │           │ step3                     │
+            │           │ Type: single              │
+            │           │ Mode: local               │
+            │           ╰───────────────────────────╯
+            └── ╭────────── Step ───────────╮
+                │ step4                     │
+                │ Type: single              │
+                │ Mode: local               │
+                ╰───────────────────────────╯
+        ```
+        """
+        console = Console()
+        
+        try:
+            ordered_steps = self.get_execution_order()
+        except DependencyError:
+            console.print("[red]Error: Cannot visualize graph with cycles[/red]")
+            return
+
+        main_tree = Tree("[bold blue]Dependency Graph[/bold blue]")
+
+        # Get all step information
+        step_map = {step.name: step for step in self.workflow.workflow.steps}
+        
+        # Fix: Treat steps with empty dependency sets as root nodes
+        root_nodes = {
+            step.name for step in self.workflow.workflow.steps
+            if not self.graph[step.name]
+        }
+
+        def add_step_tree(parent_tree: Tree, step_name: str, visited: Set[str]) -> None:
+            """Recursively add steps and their dependent sub-nodes to the tree."""
+            if step_name in visited:
+                return
+            visited.add(step_name)
+            
+            step = step_map[step_name]
+            step_node = Panel.fit(
+                f"[bold cyan]{step_name}[/bold cyan]\n"
+                f"[dim]Type: {step.type}[/dim]\n"
+                f"[dim]Mode: {step.execution.mode}[/dim]",
+                box=box.ROUNDED,
+                padding=(0, 1),
+                title="[blue]Step[/blue]"
+            )
+            current_tree = parent_tree.add(step_node)
+            
+            # Find all steps that depend on the current step
+            dependents = sorted([
+                name for name, deps in self.graph.items()
+                if step_name in deps
+            ])
+            
+            for dependent in dependents:
+                add_step_tree(current_tree, dependent, visited)
+
+        visited = set()
+        for root in sorted(root_nodes):
+            add_step_tree(main_tree, root, visited)
+
+        console.print(main_tree)
+
+        # Print parallel execution groups (calculated by dependency chain depth)
+        levels: Dict[int, List[str]] = defaultdict(list)
+        for step in ordered_steps:
+            depth = len(self._get_dependency_chain(step.name))
+            levels[depth].append(step.name)
+
+        if len(levels) > 1:
+            console.print("\n[bold yellow]Parallel Execution Groups:[/bold yellow]")
+            for depth, steps in sorted(levels.items()):
+                if len(steps) > 1:
+                    console.print(f"[green]Level {depth}:[/green] {', '.join(sorted(steps))}")
+
+    def _get_dependency_chain(self, step_name: str) -> List[str]:
+        """Get the chain of dependencies for a step."""
+        chain = []
+        current = step_name
+        visited = set()
+        
+        while current and current not in visited:
+            visited.add(current)
+            chain.append(current)
+            # Get the first dependency of the current step
+            deps = self.graph[current]
+            current = next(iter(deps)) if deps else None
+            
+        return chain
+
     def _find_cycle(self, nodes: Set[str]) -> List[str]:
         """Find a cycle in the dependency graph starting from given nodes."""
         def dfs(node: str, path: List[str], visited: Set[str]) -> List[str]:
@@ -174,6 +285,10 @@ class DependencyResolver:
 def main():
     """Run example dependency resolution."""
     from bioinfo_flow.parser.workflow_parser import WorkflowParser
+    from rich.console import Console
+    from rich import print as rprint
+
+    console = Console()
 
     example_workflow = """
     name: test-workflow
@@ -206,6 +321,13 @@ def main():
               execution:
                 mode: local
                 command: "echo 'step3'"
+
+            - name: step4
+              type: single
+              depends_on: ["step1"]
+              execution:
+                mode: local
+                command: "echo 'parallel with step2'"
     """
 
     try:
@@ -215,20 +337,19 @@ def main():
         print("Validating dependencies...")
         resolver.validate_dependencies()
         
-        print("\nDependency Graph:")
-        for step_name, deps in resolver.graph.items():
-            if deps:
-                print(f"{step_name} depends on: {list(deps)}")
-            else:
-                print(f"{step_name}: no dependencies")
+        console.print("\n[bold blue]Dependency Graph:[/bold blue]")
+        resolver.visualize_graph()
         
-        print("\nExecution Order:")
+        console.print("\n[bold green]Execution Order:[/bold green]")
         for i, step in enumerate(resolver.get_execution_order(), 1):
             deps = resolver.graph[step.name]
-            print(f"{i}. {step.name} (depends on: {list(deps) if deps else 'none'})")
+            console.print(
+                f"{i}. [cyan]{step.name}[/cyan] (depends on: "
+                f"[yellow]{list(deps) if deps else 'none'}[/yellow])"
+            )
             
     except Exception as e:
-        print(f"Error resolving dependencies: {e}")
+        console.print(f"[red]Error resolving dependencies: {e}[/red]")
 
 
 if __name__ == "__main__":
