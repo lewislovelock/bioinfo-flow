@@ -1,269 +1,410 @@
-# BioFlow
+# BioinfoFlow Specification v0.1 🧬
 
-[English](#english) | [中文](#中文)
+## Table of Contents
+- [Overview](#overview) 📋
+- [Core Concepts](#core-concepts) 💡
+- [Configuration Reference](#configuration-reference) ⚙️
+- [Examples](#examples) 🌟
+- [Key Features](#key-features) ⭐
+- [Best Practices](#best-practices) 🎯
+- [Style Guide](#style-guide) 📝
+- [Version Control](#version-control) 🔄
 
-<div id="english">
+## Overview 📋
 
-## Overview
+BioinfoFlow is a powerful workflow engine specifically designed for bioinformatics applications, enabling reproducible, scalable, and container-native data analysis pipelines. This specification defines a human-readable workflow language that emphasizes simplicity and maintainability.
 
-BioFlow is a lightweight, container-based workflow engine designed specifically for bioinformatics pipelines. It provides a simple yet powerful YAML-based workflow definition language with support for Docker containers, dependency management, and parallel execution.
+### Target Audience
+- Bioinformaticians and computational biologists
+- Research laboratories and institutions
+- Bioinformatics pipeline developers
+- Data scientists working with biological data
 
-### Key Features
+### Use Cases
+- High-throughput sequencing data analysis
+- Genomics and transcriptomics workflows
+- Population genetics studies
+- Clinical genomics pipelines
+- Custom bioinformatics tool integration
 
-- **Simple YAML Configuration**
-  - Human-readable workflow definitions
-  - Environment variable support
-  - Container configuration
-  - Step dependencies
+## Core Concepts 💡
 
-- **Docker Container Support**
-  - Automatic image pulling
-  - Volume mounting
-  - Environment variable passing
-  - Container resource management
+BioinfoFlow is built around four fundamental concepts that work together to create robust bioinformatics pipelines:
 
-- **Dependency Management**
-  - Explicit dependency declaration
-  - Automatic dependency resolution
-  - Parallel execution of independent steps
-  - Cycle detection
+### Workflows
+A workflow is a collection of steps that process biological data. Each workflow:
+- Has a unique name and version
+- Contains one or more steps
+- Defines its input requirements
+- Specifies resource requirements
+- Maintains reproducibility through containerization
 
-- **Robust Execution**
-  - Asynchronous execution
-  - Error handling
-  - Status tracking
-  - Detailed logging
+### Steps
+Steps are the basic building blocks of a workflow. They can be:
+- Single steps (e.g., quality control, alignment)
+- Parallel steps (e.g., sample-level processing)
+- Sequential steps (e.g., variant calling pipeline)
 
-## Installation
+Each step is:
+- Containerized for reproducibility
+- Resource-aware for efficient execution
+- Input/output tracked for dependency management
+- Automatically logged for monitoring
 
+### Dependencies
+Steps can depend on other steps, forming a directed acyclic graph (DAG):
+- Explicit dependencies via 'after' field
+- Implicit dependencies through input/output relationships
+- Parallel execution of independent steps
+- Automatic dependency resolution
+
+### Containers
+Each step runs in its own container environment, ensuring:
+- Software version control
+- Environment isolation
+- Reproducibility across systems
+- Portable execution
+
+## Configuration Reference ⚙️
+
+BioinfoFlow uses YAML format for workflow definitions. This section details the configuration structure and options available.
+
+### Environment Variables
 ```bash
-# Create and activate virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install from source
-git clone https://github.com/yourusername/bioflow.git
-cd bioflow
-pip install -e ".[dev]"
+BIOFLOW_HOME=/data/bioflow
+BIOFLOW_REFS=/data/bioflow/refs
+BIOFLOW_WORKFLOWS=/data/bioflow/workflows
+BIOFLOW_RUNS=/data/bioflow/runs
+BIOFLOW_TMP=/data/bioflow/tmp
 ```
 
-## Quick Start
+### Root Level Fields
 
-1. Create a workflow configuration file `workflow.yaml`:
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| name | string | Yes | Workflow name |
+| version | string | Yes | Workflow version |
+| description | string | No | Workflow description |
+| config | object | No | Global configuration |
+| inputs | object | No | Global inputs |
+| steps | object | Yes | Workflow steps |
+
+### Configuration
+
+The `config` section defines configuration settings like database paths, runtime settings, etc.
 
 ```yaml
-name: example-workflow
-version: "1.0"
-description: "Example workflow"
+config:
+  # Runtime settings
+  max_retries: 3
 
-global:
-  working_dir: "./work"
-  temp_dir: "./temp"
-
-env:
-  INPUT_DIR: "./input"
-  OUTPUT_DIR: "./output"
-  SAMPLE_NAME: "test_sample"
-
-workflow:
-  steps:
-    - name: quality_control
-      type: single
-      command: |
-        echo "Running QC on ${env.SAMPLE_NAME}..."
-        echo "Quality metrics:"
-        echo "Read count: 1000000"
-      container:
-        type: docker
-        image: alpine
-        version: "latest"
-        mounts:
-          - host: ${env.OUTPUT_DIR}/qc
-            container: /data/qc
-
-    - name: analysis
-      type: single
-      command: |
-        echo "Analyzing ${env.SAMPLE_NAME}..."
-        echo "Analysis complete"
-      container:
-        type: docker
-        image: alpine
-        version: "latest"
-        mounts:
-          - host: ${env.OUTPUT_DIR}/results
-            container: /data/results
-      depends_on:
-        - quality_control
+  # Reference data paths (relative to BIOFLOW_REFS)
+  ref_genome: "hg38/genome.fa"
+  dbsnp: "hg38/dbsnp.vcf.gz"
+  known_indels: "hg38/known_indels.vcf.gz"
 ```
 
-2. Run the workflow:
+### Directory Structure
 
-```python
-from pathlib import Path
-from bioflow.parser import WorkflowParser
-from bioflow.engine import WorkflowExecutor
-
-# Parse workflow
-parser = WorkflowParser()
-workflow = parser.parse("workflow.yaml")
-
-# Create executor
-executor = WorkflowExecutor(
-    workflow=workflow,
-    working_dir=Path("work"),
-    temp_dir=Path("temp")
-)
-
-# Execute workflow
-result = await executor.execute()
+All workflow files are organized under the `work_dir`:
+```
+/tasks                          # work_dir
+└── workflow_name/              # Workflow instance directory
+    ├── v1.0.0/                 # Version-specific workflow files
+    │   ├── 202403201234_xxxx/  # run_id (timestamp + uuid)
+    │   │   ├── inputs/         # Task input files
+    │   │   ├── outputs/        # Task output files
+    │   │   └── logs/           # Task logs
+    │   └── 202403201235_yyyy/  # ...
+    │       ├── inputs/
+    │       ├── outputs/
+    │       └── logs/
 ```
 
-## Documentation
+### Input Configuration
 
-For more detailed documentation and examples, please see:
-- [Development Guide](DEVELOPMENT.md)
-- [Example Workflows](examples/)
-
-## Contributing
-
-Contributions are welcome! Please read our [Contributing Guide](DEVELOPMENT.md) for details on our code of conduct and the process for submitting pull requests.
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-</div>
-
-<div id="中文">
-
-## 概述
-
-BioFlow 是一个专为生物信息学设计的轻量级、基于容器的工作流引擎。它提供了简单但强大的基于 YAML 的工作流定义语言，支持 Docker 容器、依赖管理和并行执行。
-
-### 主要特性
-
-- **简单的 YAML 配置**
-  - 人类可读的工作流定义
-  - 环境变量支持
-  - 容器配置
-  - 步骤依赖
-
-- **Docker 容器支持**
-  - 自动镜像拉取
-  - 卷挂载
-  - 环境变量传递
-  - 容器资源管理
-
-- **依赖管理**
-  - 显式依赖声明
-  - 自动依赖解析
-  - 独立步骤并行执行
-  - 循环检测
-
-- **健壮的执行**
-  - 异步执行
-  - 错误处理
-  - 状态跟踪
-  - 详细日志
-
-## 安装
-
-```bash
-# 创建并激活虚拟环境
-python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
-
-# 从源码安装
-git clone https://github.com/yourusername/bioflow.git
-cd bioflow
-pip install -e ".[dev]"
-```
-
-## 快速开始
-
-1. 创建工作流配置文件 `workflow.yaml`：
+The `inputs` section supports both single files and sample groups:
 
 ```yaml
-name: example-workflow
-version: "1.0"
-description: "示例工作流"
-
-global:
-  working_dir: "./work"
-  temp_dir: "./temp"
-
-env:
-  INPUT_DIR: "./input"
-  OUTPUT_DIR: "./output"
-  SAMPLE_NAME: "test_sample"
-
-workflow:
-  steps:
-    - name: quality_control
-      type: single
-      command: |
-        echo "对 ${env.SAMPLE_NAME} 进行质控..."
-        echo "质控指标："
-        echo "读数：1000000"
-      container:
-        type: docker
-        image: alpine
-        version: "latest"
-        mounts:
-          - host: ${env.OUTPUT_DIR}/qc
-            container: /data/qc
-
-    - name: analysis
-      type: single
-      command: |
-        echo "分析 ${env.SAMPLE_NAME}..."
-        echo "分析完成"
-      container:
-        type: docker
-        image: alpine
-        version: "latest"
-        mounts:
-          - host: ${env.OUTPUT_DIR}/results
-            container: /data/results
-      depends_on:
-        - quality_control
+inputs:
+  # Single file input
+  reads:
+    type: file
+    pattern: "*.fastq.gz" # Use glob pattern to match files, put it under inputs dir
+  
+  # Sample group input
+  samples:
+    type: group
+    pattern: "samples.csv"    # Sample information file, put it under inputs dir
+    format: csv # future support other format, like tsv, xlsx, etc.
+    columns:
+      - name: sample_id
+        type: string
+        unique: true
+      - name: read1
+        type: file
+        pattern: "*.fastq.gz"
+      - name: read2
+        type: file
+        pattern: "*.fastq.gz"
 ```
 
-2. 运行工作流：
+### Step Configuration
 
-```python
-from pathlib import Path
-from bioflow.parser import WorkflowParser
-from bioflow.engine import WorkflowExecutor
+Each step follows a consistent structure:
 
-# 解析工作流
-parser = WorkflowParser()
-workflow = parser.parse("workflow.yaml")
-
-# 创建执行器
-executor = WorkflowExecutor(
-    workflow=workflow,
-    working_dir=Path("work"),
-    temp_dir=Path("temp")
-)
-
-# 执行工作流
-result = await executor.execute()
+```yaml
+steps:
+  step_name:
+    container: "image:tag"              # Container image
+    foreach: samples          # Optional: iterate over samples
+    inputs:
+      input1: ${steps.prev.outputs.out} # Reference to previous step output
+      input2: ${global.some_config}        # Reference to environment
+    outputs:
+      output1: "path/to/output"         # Output definition
+    command: "command ${inputs.input1}" # Command template
+    after: [dependency1, dependency2]    # Step dependencies
+    resources:                          # Resource requirements
+      cpu: 2
+      memory: 4G
 ```
 
-## 文档
+Key Fields:
+- `container`: Container image reference
+- `volumes`: Container volume configuration, default to BIOFLOW_HOME
+- `foreach`: Optional field for sample iteration
+- `inputs`: Input definitions with references
+- `outputs`: Output path definitions (using task directory)
+- `command`: Command template with variable substitution
+- `after`: Step dependencies
+- `resources`: Resource requirements
 
-更详细的文档和示例，请参见：
-- [开发指南](DEVELOPMENT.md)
-- [示例工作流](examples/)
+### Variable References
 
-## 贡献
+Variables can be referenced using `${...}` syntax:
+- `${config.VAR}`: Global reference
+- `${inputs.NAME}`: Input reference
+- `${steps.STEP.outputs.NAME}`: Step output reference
+- `${sample.FIELD}`: Sample field reference (in foreach context)
+- `${workflow.name}`: Current workflow name
+- `${step.name}`: Current step name
 
-欢迎贡献！请阅读我们的[开发指南](DEVELOPMENT.md)了解行为准则和提交拉取请求的流程。
+### Multi-sample Processing
 
-## 许可证
+For workflows processing multiple samples:
+1. Define sample structure in `inputs.samples`
+2. Use `foreach: samples` in steps
+3. Reference sample fields with `${sample.field_name}`
+4. Collect outputs using step references
 
-本项目采用 MIT 许可证 - 详见 [LICENSE](LICENSE) 文件。
+## Examples 🌟
 
-</div> 
+BioinfoFlow examples demonstrate common bioinformatics workflows and best practices for configuration.
+
+### Variant Calling Pipeline Example
+
+This example shows a complete germline variant calling workflow using BWA and GATK4:
+
+```yaml
+name: variant_calling_pipeline
+version: "1.0.0"
+description: "Germline variant calling workflow using BWA and GATK4"
+
+config:
+  ref_genome: "reference/hg38.fa"
+  dbsnp: "reference/dbsnp.vcf.gz"
+  known_indels: "reference/known_indels.vcf.gz"
+
+  max_retries: 3
+
+inputs:
+  samples:
+    type: group
+    pattern: "samples.csv"
+    format: csv
+    columns:
+      - name: sample_id
+        type: string
+        unique: true
+      - name: read1
+        type: file
+        pattern: "*.fastq.gz"
+      - name: read2
+        type: file
+        pattern: "*.fastq.gz"
+
+steps:
+  fastqc:
+    container: "biocontainers/fastqc:v0.11.9"
+    foreach: samples
+    inputs:
+      read1: ${sample.read1}
+      read2: ${sample.read2}
+    outputs:
+      qc_report: "qc/${sample.sample_id}/fastqc_report.html"
+    command: |
+      fastqc ${inputs.read1} ${inputs.read2} -o $(dirname ${outputs.qc_report})
+    resources:
+      cpu: 2
+      memory: 4G
+
+  bwa_mem:
+    container: "biocontainers/bwa:v0.7.17"
+    foreach: samples
+    inputs:
+      read1: ${sample.read1}
+      read2: ${sample.read2}
+      ref: ${global.ref_genome}
+    outputs:
+      bam: "aligned/${sample.sample_id}.bam"
+    command: |
+      bwa mem -t ${resources.cpu} \
+      -R "@RG\tID:${sample.sample_id}\tSM:${sample.sample_id}" \
+      ${inputs.ref} ${inputs.read1} ${inputs.read2} \
+      | samtools sort -@ ${resources.cpu} -o ${outputs.bam}
+    after: [fastqc]
+    resources:
+      cpu: 8
+      memory: 16G
+
+  variant_call:
+    container: "broadinstitute/gatk:4.2.6.1"
+    foreach: samples
+    inputs:
+      bam: ${steps.bwa_mem.outputs.bam}
+      ref: ${global.ref_genome}
+    outputs:
+      vcf: "variants/${sample.sample_id}.vcf.gz"
+    command: |
+      gatk HaplotypeCaller \
+      -I ${inputs.bam} \
+      -R ${inputs.ref} \
+      -O ${outputs.vcf}
+    after: [bwa_mem]
+    resources:
+      cpu: 4
+      memory: 16G
+```
+
+## Experimental Features 🧪
+
+### Metadata
+```yaml
+metadata:
+  author: name
+  tags: [DNA-seq, RNA-seq]
+  license: MIT
+  documentation: "https://docs.example.com"
+```
+
+### Conditions
+```yaml
+conditions:
+  file_exists:
+    when: "exists:/path/to/file"
+    skip: false
+```
+
+### Hooks
+```yaml
+hooks:
+  before_step:            # Before step execution
+    - name: string
+      script: string
+  after_step:             # After step execution
+    - name: string
+      script: string
+  on_success:             # On workflow success
+    - name: string
+      script: string
+  on_failure:             # On workflow failure
+    - name: string
+      script: string
+```
+
+### Notifications
+```yaml
+notifications:
+  email:
+    recipients: ["user@example.com"]
+    subject: "Workflow completed"
+    body: "Workflow completed successfully"
+  slack:
+    webhook_url: "https://hooks.slack.com/services/.../..."
+  discord:
+    webhook_url: "https://discord.com/api/webhooks/.../..."
+  feishu:
+    webhook_url: "https://open.larkoffice.com/open-apis/bot/v2/hook/.../..."
+```
+
+## Key Features ⭐
+
+- 🐳 Container-native execution with automatic version management
+- 📊 Flexible resource management
+- 💾 Built-in checkpoint and resume capability
+- 🔍 Dynamic input pattern matching
+- ⚡ Parallel and sequential execution support
+- 🔗 Clear dependency management
+- 🛡️ Environment isolation
+
+## Best Practices 🎯
+
+Follow these guidelines to create efficient and maintainable workflows:
+
+### Container Management 🐳
+- Use specific version tags for reproducibility
+- Choose official or verified container images
+- Keep container images minimal and focused
+
+### Resource Management 📊
+- Set appropriate CPU and memory limits
+- Use resource profiles for different environments
+- Monitor resource usage patterns
+
+### Workflow Design 📐
+- Keep steps modular and focused
+- Use meaningful step and variable names
+- Document inputs, outputs, and dependencies
+- Follow the principle of least privilege
+
+### Error Handling ⚠️
+- Implement appropriate error checking
+- Use retry strategies for transient failures
+- Log errors with sufficient context
+- Clean up temporary resources
+
+## Style Guide 📝
+
+Follow these conventions for consistent workflow definitions:
+
+### Naming Conventions
+- Use lowercase for workflow names
+- Use snake_case for step names
+- Use descriptive names for inputs and outputs
+
+### YAML Formatting
+- Use 2 spaces for indentation
+- Break long commands with line continuations
+- Group related configuration items
+
+### Value Formatting
+Use quotes for:
+- File paths: `"path/to/file"`
+- Version numbers: `"1.0.0"`
+- Commands with variables
+- Container references
+
+Don't quote:
+- Numbers
+- Resource units
+- Boolean values
+- Simple identifiers
+
+## Version Control 🔄
+
+This is version 0.1 of the BioinfoFlow specification. Future versions will focus on:
+- Enhanced container orchestration
+- Advanced dependency management
+- Extended security features
+- Improved monitoring capabilities 
