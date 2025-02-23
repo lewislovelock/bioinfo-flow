@@ -134,7 +134,7 @@ inputs:
   
   # Sample group input
   samples:
-    type: group
+    type: sample_group
     pattern: "samples.csv"    # Sample information file, put it under inputs dir
     format: csv # future support other format, like tsv, xlsx, etc.
     columns:
@@ -220,7 +220,7 @@ config:
 
 inputs:
   samples:
-    type: group
+    type: sample_group
     pattern: "samples.csv"
     format: csv
     columns:

@@ -1,0 +1,80 @@
+name: variant_calling_pipeline
+version: "1.0.0"
+description: "Germline variant calling workflow using BWA and GATK4"
+
+config:
+  ref_genome: "reference/hg38.fa"
+  dbsnp: "reference/dbsnp.vcf.gz"
+  known_indels: "reference/known_indels.vcf.gz"
+  max_retries: 3
+
+inputs:
+  samples:
+    type: sample_group
+    pattern: "samples.csv"
+    format: csv
+    columns:
+      - name: sample_id
+        type: string
+        unique: true
+      - name: read1
+        type: file
+        pattern: "*.fastq.gz"
+      - name: read2
+        type: file
+        pattern: "*.fastq.gz"
+
+steps:
+  fastqc:
+    container: 
+      image: "biocontainers/fastqc:v0.11.9"
+    foreach: samples
+    inputs:
+      read1: ${sample.read1}
+      read2: ${sample.read2}
+    outputs:
+      qc_report: "qc/${sample.sample_id}/fastqc_report.html"
+    command: |
+      fastqc ${inputs.read1} ${inputs.read2} -o $(dirname ${outputs.qc_report})
+    resources:
+      cpu: 2
+      memory: "4GB"
+
+  bwa_mem:
+    container:
+      image: "biocontainers/bwa:v0.7.17"
+    foreach: samples
+    inputs:
+      read1: ${sample.read1}
+      read2: ${sample.read2}
+      ref: ${config.ref_genome}
+    outputs:
+      bam: "aligned/${sample.sample_id}.bam"
+    command: |
+      bwa mem -t ${resources.cpu} \
+      -R "@RG\tID:${sample.sample_id}\tSM:${sample.sample_id}" \
+      ${inputs.ref} ${inputs.read1} ${inputs.read2} \
+      | samtools sort -@ ${resources.cpu} -o ${outputs.bam}
+    after: [fastqc]
+    resources:
+      cpu: 8
+      memory: "16GB"
+
+  variant_call:
+    container:
+      image: "broadinstitute/gatk:4.2.6.1"
+    foreach: samples
+    inputs:
+      bam: ${steps.bwa_mem.outputs.bam}
+      ref: ${config.ref_genome}
+    outputs:
+      vcf: "variants/${sample.sample_id}.vcf.gz"
+    command: |
+      gatk HaplotypeCaller \
+      -I ${inputs.bam} \
+      -R ${inputs.ref} \
+      -O ${outputs.vcf}
+    after: [bwa_mem]
+    resources:
+      cpu: 4
+      memory: "16GB" 
