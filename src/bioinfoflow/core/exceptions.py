@@ -35,3 +35,7 @@ class ResourceError(BioinfoFlowError):
 class ContainerError(BioinfoFlowError):
     """Raised when container operations fail."""
     pass 
+
+class SchedulerError(BioinfoFlowError):
+    """Raised when scheduler operations fail."""
+    pass
