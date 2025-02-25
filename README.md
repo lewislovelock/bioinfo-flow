@@ -69,14 +69,26 @@ Each step runs in its own container environment, ensuring:
 
 BioinfoFlow uses YAML format for workflow definitions. This section details the configuration structure and options available.
 
-### Environment Variables
-```bash
-BIOFLOW_HOME=/data/bioflow
-BIOFLOW_REFS=/data/bioflow/refs
-BIOFLOW_WORKFLOWS=/data/bioflow/workflows
-BIOFLOW_RUNS=/data/bioflow/runs
-BIOFLOW_TMP=/data/bioflow/tmp
-```
+### Path Configuration
+
+BioinfoFlow uses a flexible path resolution system:
+
+1. **Base Directory**: Set with `BIOFLOW_BASE=/path/to/base` (default: current directory)
+2. **Directory Structure**: All other directories derive from `BIOFLOW_BASE`:
+   ```
+   ${BIOFLOW_BASE}/
+   ├── refs/          # Reference data (BIOFLOW_REFS)
+   ├── workflows/     # Workflow definitions (BIOFLOW_WORKFLOWS)
+   ├── runs/          # Workflow runs (BIOFLOW_RUNS)
+   └── tmp/           # Temporary files (BIOFLOW_TMP)
+   ```
+
+3. **Path Resolution Rules**:
+   - Absolute paths (starting with `/`) are used as-is
+   - Paths starting with `~/` are expanded to the user's home directory
+   - Paths starting with `./` are relative to the current directory
+   - Paths without a leading `/`, `~/`, or `./` are relative to the workflow directory
+   - Special variables like `${workflow.dir}` can be used for workflow-relative paths
 
 ### Root Level Fields
 
@@ -91,35 +103,36 @@ BIOFLOW_TMP=/data/bioflow/tmp
 
 ### Configuration
 
-The `config` section defines configuration settings like database paths, runtime settings, etc.
+The `config` section defines configuration settings like database paths, ref path, etc.
 
 ```yaml
 config:
-  # Runtime settings
-  max_retries: 3
-
-  # Reference data paths (relative to BIOFLOW_REFS)
-  ref_genome: "hg38/genome.fa"
+  base_dir: "/mnt/nas/bioflow"       # Override BIOFLOW_BASE
+  ref_dir: "${config.base_dir}/refs" # Override BIOFLOW_REFS
+  tmp_dir: "/scratch/tmp"            # Custom tmp directory
+  
+  # Reference data paths (relative to ref_dir)
+  ref_genome: "hg38/genome.fa"       # Resolves to /mnt/nas/bioflow/refs/hg38/genome.fa
   dbsnp: "hg38/dbsnp.vcf.gz"
   known_indels: "hg38/known_indels.vcf.gz"
 ```
 
 ### Directory Structure
 
-All workflow files are organized under the `work_dir`:
+BioinfoFlow creates this directory structure for each workflow run:
 ```
-/tasks                          # work_dir
-└── workflow_name/              # Workflow instance directory
-    ├── v1.0.0/                 # Version-specific workflow files
-    │   ├── 202403201234_xxxx/  # run_id (timestamp + uuid)
-    │   │   ├── inputs/         # Task input files
-    │   │   ├── outputs/        # Task output files
-    │   │   └── logs/           # Task logs
-    │   └── 202403201235_yyyy/  # ...
-    │       ├── inputs/
-    │       ├── outputs/
-    │       └── logs/
+${BIOFLOW_RUNS}/
+└── workflow_name/              # Workflow name
+    └── version/                # Workflow version
+        └── run_id/             # Run ID (timestamp + random string)
+            ├── workflow.yaml   # Copy of workflow definition
+            ├── inputs/         # Input files/links
+            ├── outputs/        # Output files
+            ├── logs/           # Log files
+            └── tmp/            # Temporary files (deleted after run)
 ```
+
+Each step's outputs are organized within this structure.
 
 ### Input Configuration
 
@@ -127,26 +140,37 @@ The `inputs` section supports both single files and sample groups:
 
 ```yaml
 inputs:
-  # Single file input
+  # Single file input with absolute path
+  reference:
+    type: file
+    path: "/absolute/path/to/reference.fa"  # Absolute path
+  
+  # Single file input with relative path (relative to workflow input directory)
   reads:
     type: file
-    pattern: "*.fastq.gz" # Use glob pattern to match files, put it under inputs dir
+    path: "*.fastq.gz"  # Relative to ${workflow.dir}/inputs/
+  
+  # Single file input with custom base directory
+  annotations:
+    type: file
+    base_dir: "/data/shared/annotations"  # Custom base directory
+    path: "gencode.v38.gtf"              # Relative to base_dir
   
   # Sample group input
   samples:
     type: sample_group
-    pattern: "samples.csv"    # Sample information file, put it under inputs dir
-    format: csv # future support other format, like tsv, xlsx, etc.
+    path: "samples.csv"    # Sample information file, relative to ${workflow.dir}/inputs/
+    format: csv            # Format can be csv, tsv, xlsx, etc.
     columns:
       - name: sample_id
         type: string
         unique: true
       - name: read1
         type: file
-        pattern: "*.fastq.gz"
+        path: "*.fastq.gz"
       - name: read2
         type: file
-        pattern: "*.fastq.gz"
+        path: "*.fastq.gz"
 ```
 
 ### Step Configuration
@@ -156,23 +180,23 @@ Each step follows a consistent structure:
 ```yaml
 steps:
   step_name:
-    container: "image:tag"              # Container image
-    foreach: samples          # Optional: iterate over samples
+    container: "image:tag"                   # Container image
+    foreach: samples                         # Optional: iterate over samples
     inputs:
-      input1: ${steps.prev.outputs.out} # Reference to previous step output
-      input2: ${global.some_config}        # Reference to environment
+      input1: ${steps.prev.outputs.out}      # Reference to previous step output
+      input2: ${config.some_setting}         # Reference to configuration
     outputs:
-      output1: "path/to/output"         # Output definition
-    command: "command ${inputs.input1}" # Command template
-    after: [dependency1, dependency2]    # Step dependencies
-    resources:                          # Resource requirements
+      output1: "path/to/output"              # Output definition
+    command: "command ${inputs.input1}"      # Command template
+    after: [dependency1, dependency2]        # Step dependencies
+    resources:                               # Resource requirements
       cpu: 2
       memory: 4G
 ```
 
-Key Fields:
+**Key Fields**:
 - `container`: Container image reference
-- `volumes`: Container volume configuration, default to BIOFLOW_HOME
+- `volumes`: Container volume configuration, default to BIOFLOW_BASE
 - `foreach`: Optional field for sample iteration
 - `inputs`: Input definitions with references
 - `outputs`: Output path definitions (using task directory)
@@ -183,12 +207,46 @@ Key Fields:
 ### Variable References
 
 Variables can be referenced using `${...}` syntax:
-- `${config.VAR}`: Global reference
-- `${inputs.NAME}`: Input reference
-- `${steps.STEP.outputs.NAME}`: Step output reference
+- `${config.VAR}`: Global configuration values
+- `${inputs.NAME}`: Input references
+- `${steps.STEP.outputs.NAME}`: Output from previous steps
 - `${sample.FIELD}`: Sample field reference (in foreach context)
 - `${workflow.name}`: Current workflow name
+- `${workflow.version}`: Current workflow version
+- `${workflow.dir}`: Current workflow directory
+- `${run.id}`: Current run ID
 - `${step.name}`: Current step name
+
+**Default Values**:
+Use the `:-` syntax to specify default values when a variable might be undefined:
+```
+${config.threads:-4}  # Use 4 if config.threads is not defined
+```
+
+**Environment Variables**:
+Access system environment variables with the `env.` prefix:
+```
+${env.HOME}          # User's home directory
+${env.PATH}          # System PATH
+${env.BIOFLOW_BASE}  # BIOFLOW_BASE environment variable
+```
+
+**Examples**:
+```yaml
+# Reference a configuration value
+command: "samtools view -@ ${config.threads}"
+
+# Reference a step output
+inputs:
+  bam: ${steps.alignment.outputs.aligned_bam}
+
+# Use a sample field in a foreach context
+outputs:
+  vcf: "variants/${sample.sample_id}.vcf"
+
+# Combine with default value
+memory: "${config.mem_gb:-4}G"
+```
 
 ### Multi-sample Processing
 
@@ -216,12 +274,10 @@ config:
   dbsnp: "reference/dbsnp.vcf.gz"
   known_indels: "reference/known_indels.vcf.gz"
 
-  max_retries: 3
-
 inputs:
   samples:
     type: sample_group
-    pattern: "samples.csv"
+    path: "samples.csv"
     format: csv
     columns:
       - name: sample_id
@@ -229,10 +285,10 @@ inputs:
         unique: true
       - name: read1
         type: file
-        pattern: "*.fastq.gz"
+        path: "*.fastq.gz"
       - name: read2
         type: file
-        pattern: "*.fastq.gz"
+        path: "*.fastq.gz"
 
 steps:
   fastqc:
@@ -255,7 +311,7 @@ steps:
     inputs:
       read1: ${sample.read1}
       read2: ${sample.read2}
-      ref: ${global.ref_genome}
+      ref: ${config.ref_genome}
     outputs:
       bam: "aligned/${sample.sample_id}.bam"
     command: |
@@ -273,7 +329,7 @@ steps:
     foreach: samples
     inputs:
       bam: ${steps.bwa_mem.outputs.bam}
-      ref: ${global.ref_genome}
+      ref: ${config.ref_genome}
     outputs:
       vcf: "variants/${sample.sample_id}.vcf.gz"
     command: |
